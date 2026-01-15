@@ -1,0 +1,134 @@
+# =============================================================================
+# Stack Overflow Analytics - Application Settings
+# =============================================================================
+
+# Application Info
+app:
+  name: "Stack Overflow Analytics"
+  version: "1.0.0"
+  description: "Big Data Analytics Pipeline for Stack Overflow Data"
+
+# Data Paths
+paths:
+  raw_data: "data/raw"
+  processed_data: "data/processed"
+  output_data: "data/output"
+  models: "models"
+  logs: "logs"
+
+# Data Source
+data_source:
+  base_url: "https://archive.org/download/stackexchange"
+  files:
+    posts: "stackoverflow.com-Posts.7z"
+    users: "stackoverflow.com-Users.7z"
+    comments: "stackoverflow.com-Comments.7z"
+    tags: "stackoverflow.com-Tags.7z"
+    votes: "stackoverflow.com-Votes.7z"
+    badges: "stackoverflow.com-Badges.7z"
+    post_links: "stackoverflow.com-PostLinks.7z"
+
+# ETL Configuration
+etl:
+  batch_size: 100000
+  partitions: 200
+  output_format: "parquet"
+  compression: "snappy"
+  partition_by:
+    - "year"
+    - "month"
+
+# NLP Configuration
+nlp:
+  # Text preprocessing
+  preprocessing:
+    remove_html: true
+    remove_code: true
+    lowercase: true
+    remove_stopwords: true
+    lemmatize: true
+    min_word_length: 2
+    max_word_length: 50
+  
+  # Feature extraction
+  features:
+    tfidf:
+      max_features: 10000
+      min_df: 5
+      max_df: 0.95
+    word2vec:
+      vector_size: 100
+      window: 5
+      min_count: 5
+      epochs: 10
+  
+  # Topic modeling
+  topic_modeling:
+    algorithm: "lda"  # lda, nmf
+    num_topics: 20
+    max_iterations: 100
+    learning_decay: 0.7
+  
+  # Sentiment analysis
+  sentiment:
+    model: "vader"  # vader, textblob, bert
+    threshold_positive: 0.05
+    threshold_negative: -0.05
+
+# Machine Learning Configuration
+ml:
+  # Train/test split
+  test_size: 0.2
+  random_state: 42
+  
+  # Quality prediction model
+  quality_prediction:
+    algorithm: "gradient_boosting"
+    features:
+      - "title_length"
+      - "body_length"
+      - "code_ratio"
+      - "question_marks"
+      - "num_tags"
+      - "tfidf_features"
+    hyperparameters:
+      n_estimators: 100
+      max_depth: 10
+      learning_rate: 0.1
+  
+  # Trend forecasting
+  trend_forecasting:
+    algorithm: "prophet"
+    forecast_periods: 12
+    seasonality_mode: "multiplicative"
+  
+  # Duplicate detection
+  duplicate_detection:
+    similarity_threshold: 0.85
+    algorithm: "cosine"  # cosine, jaccard, word2vec
+
+# Visualization Configuration
+visualization:
+  dashboard:
+    host: "localhost"
+    port: 8501
+    theme: "dark"
+  
+  charts:
+    default_width: 800
+    default_height: 500
+    color_palette: "viridis"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/app.log"
+  max_size: "10MB"
+  backup_count: 5
+
+# Performance Configuration
+performance:
+  cache_enabled: true
+  cache_ttl: 3600
+  parallel_jobs: -1  # Use all available cores
