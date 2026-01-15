@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Data files
+data/
+*.7z
+*.xml
+*.parquet
+
+# Models
+models/*.pkl
+models/*.model
