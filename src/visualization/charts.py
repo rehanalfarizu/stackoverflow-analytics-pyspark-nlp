@@ -2,6 +2,7 @@
 Chart Generator Module
 ======================
 Generate berbagai jenis chart untuk analisis.
+Kompatibel dengan Google Colab dan environment lokal.
 """
 
 import matplotlib.pyplot as plt
@@ -9,23 +10,102 @@ import matplotlib.dates as mdates
 import seaborn as sns
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 from wordcloud import WordCloud
 import logging
+import warnings
 
 logger = logging.getLogger(__name__)
 
+
+def is_running_in_colab() -> bool:
+    """
+    Cek apakah sedang berjalan di Google Colab.
+    
+    Returns
+    -------
+    bool
+        True jika di Google Colab
+    """
+    try:
+        import google.colab
+        return True
+    except ImportError:
+        return False
+
+
+def setup_colab_display():
+    """
+    Setup display untuk Google Colab.
+    Mengaktifkan inline plotting dan high DPI.
+    """
+    if is_running_in_colab():
+        from IPython import get_ipython
+        get_ipython().run_line_magic('matplotlib', 'inline')
+        
+        # Set retina display untuk kualitas lebih baik
+        from IPython.display import set_matplotlib_formats
+        try:
+            set_matplotlib_formats('retina')
+        except:
+            pass
+        
+        # Increase figure DPI
+        plt.rcParams['figure.dpi'] = 100
+        plt.rcParams['savefig.dpi'] = 150
+        
+        logger.info("Google Colab display mode activated")
+
+
+def install_colab_dependencies():
+    """
+    Install dependencies yang diperlukan di Google Colab.
+    Jalankan ini di awal notebook Colab.
+    """
+    if is_running_in_colab():
+        import subprocess
+        import sys
+        
+        packages = ['wordcloud', 'plotly']
+        for package in packages:
+            try:
+                __import__(package)
+            except ImportError:
+                subprocess.check_call([sys.executable, '-m', 'pip', 'install', package, '-q'])
+                print(f"Installed {package}")
+
+
+# Check for Plotly availability (better for Colab interactivity)
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    warnings.warn("Plotly not installed. Interactive charts will not be available. "
+                  "Install with: pip install plotly")
+
 # Set style
-plt.style.use('seaborn-v0_8-whitegrid')
+try:
+    plt.style.use('seaborn-v0_8-whitegrid')
+except:
+    plt.style.use('seaborn-whitegrid')
 sns.set_palette("husl")
+
+# Auto-setup for Colab
+if is_running_in_colab():
+    setup_colab_display()
 
 
 class ChartGenerator:
     """
     Generator untuk berbagai jenis chart.
+    Kompatibel dengan Google Colab dan environment lokal.
+    Mendukung chart statis (Matplotlib) dan interaktif (Plotly).
     """
     
-    def __init__(self, figsize: Tuple[int, int] = (12, 6)):
+    def __init__(self, figsize: Tuple[int, int] = (12, 6), interactive: bool = None):
         """
         Initialize Chart Generator.
         
@@ -33,9 +113,48 @@ class ChartGenerator:
         ----------
         figsize : Tuple[int, int]
             Default figure size
+        interactive : bool, optional
+            Gunakan Plotly untuk chart interaktif.
+            Default: True jika di Colab dan Plotly tersedia
         """
         self.figsize = figsize
         self.colors = sns.color_palette("husl", 10)
+        self.hex_colors = [self._rgb_to_hex(c) for c in self.colors]
+        
+        # Auto-detect: use interactive in Colab if available
+        if interactive is None:
+            self.interactive = is_running_in_colab() and PLOTLY_AVAILABLE
+        else:
+            self.interactive = interactive and PLOTLY_AVAILABLE
+        
+        if is_running_in_colab():
+            logger.info("ChartGenerator initialized for Google Colab")
+    
+    def _rgb_to_hex(self, rgb: Tuple) -> str:
+        """Convert RGB tuple to hex color."""
+        return '#{:02x}{:02x}{:02x}'.format(
+            int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)
+        )
+    
+    def show(self, fig) -> None:
+        """
+        Display figure - kompatibel dengan Colab dan lokal.
+        
+        Parameters
+        ----------
+        fig : matplotlib.figure.Figure or plotly.graph_objects.Figure
+            Figure to display
+        """
+        if is_running_in_colab():
+            if hasattr(fig, 'show'):  # Plotly figure
+                fig.show()
+            else:  # Matplotlib figure
+                plt.show()
+        else:
+            if hasattr(fig, 'show'):
+                fig.show()
+            else:
+                plt.show()
     
     def plot_trend(
         self,
@@ -72,9 +191,35 @@ class ChartGenerator:
             
         Returns
         -------
-        plt.Figure
-            Matplotlib figure
+        plt.Figure or plotly.graph_objects.Figure
+            Figure object
         """
+        # Interactive mode dengan Plotly
+        if self.interactive and PLOTLY_AVAILABLE:
+            if group_column:
+                fig = px.line(
+                    df, x=x_column, y=y_column, color=group_column,
+                    title=title, labels={x_column: xlabel or x_column, y_column: ylabel or y_column}
+                )
+            else:
+                fig = px.line(
+                    df, x=x_column, y=y_column,
+                    title=title, labels={x_column: xlabel or x_column, y_column: ylabel or y_column}
+                )
+            
+            fig.update_layout(
+                width=self.figsize[0] * 80,
+                height=self.figsize[1] * 80,
+                template='plotly_white'
+            )
+            
+            if save_path:
+                fig.write_image(save_path)
+                logger.info(f"Chart saved to {save_path}")
+            
+            return fig
+        
+        # Static mode dengan Matplotlib
         fig, ax = plt.subplots(figsize=self.figsize)
         
         if group_column:
@@ -140,20 +285,46 @@ class ChartGenerator:
             
         Returns
         -------
-        plt.Figure
-            Matplotlib figure
+        plt.Figure or plotly.graph_objects.Figure
+            Figure object
         """
+        plot_df = df.copy()
+        if top_n:
+            plot_df = plot_df.nlargest(top_n, y_column)
+        
+        # Interactive mode dengan Plotly
+        if self.interactive and PLOTLY_AVAILABLE:
+            if horizontal:
+                fig = px.bar(
+                    plot_df, x=y_column, y=x_column, orientation='h',
+                    title=title, color_discrete_sequence=self.hex_colors
+                )
+            else:
+                fig = px.bar(
+                    plot_df, x=x_column, y=y_column,
+                    title=title, color_discrete_sequence=self.hex_colors
+                )
+            
+            fig.update_layout(
+                width=self.figsize[0] * 80,
+                height=self.figsize[1] * 80,
+                template='plotly_white'
+            )
+            
+            if save_path:
+                fig.write_image(save_path)
+            
+            return fig
+        
+        # Static mode dengan Matplotlib
         fig, ax = plt.subplots(figsize=self.figsize)
         
-        if top_n:
-            df = df.nlargest(top_n, y_column)
-        
         if horizontal:
-            ax.barh(df[x_column], df[y_column], color=self.colors[0])
+            ax.barh(plot_df[x_column], plot_df[y_column], color=self.colors[0])
             ax.set_xlabel(y_column)
             ax.set_ylabel(x_column)
         else:
-            ax.bar(df[x_column], df[y_column], color=self.colors[0])
+            ax.bar(plot_df[x_column], plot_df[y_column], color=self.colors[0])
             ax.set_xlabel(x_column)
             ax.set_ylabel(y_column)
             plt.xticks(rotation=45, ha='right')
@@ -192,9 +363,28 @@ class ChartGenerator:
             
         Returns
         -------
-        plt.Figure
-            Matplotlib figure
+        plt.Figure or plotly.graph_objects.Figure
+            Figure object
         """
+        # Interactive mode dengan Plotly
+        if self.interactive and PLOTLY_AVAILABLE:
+            fig = px.pie(
+                df, values=values_column, names=labels_column,
+                title=title, color_discrete_sequence=self.hex_colors
+            )
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            fig.update_layout(
+                width=600,
+                height=600,
+                template='plotly_white'
+            )
+            
+            if save_path:
+                fig.write_image(save_path)
+            
+            return fig
+        
+        # Static mode dengan Matplotlib
         fig, ax = plt.subplots(figsize=(10, 10))
         
         ax.pie(
@@ -243,13 +433,33 @@ class ChartGenerator:
             
         Returns
         -------
-        plt.Figure
-            Matplotlib figure
+        plt.Figure or plotly.graph_objects.Figure
+            Figure object
         """
-        fig, ax = plt.subplots(figsize=self.figsize)
-        
         # Pivot data
         pivot_df = df.pivot(index=y_column, columns=x_column, values=value_column)
+        
+        # Interactive mode dengan Plotly
+        if self.interactive and PLOTLY_AVAILABLE:
+            fig = px.imshow(
+                pivot_df,
+                title=title,
+                color_continuous_scale=cmap.lower(),
+                text_auto=True
+            )
+            fig.update_layout(
+                width=self.figsize[0] * 80,
+                height=self.figsize[1] * 80,
+                template='plotly_white'
+            )
+            
+            if save_path:
+                fig.write_image(save_path)
+            
+            return fig
+        
+        # Static mode dengan Matplotlib
+        fig, ax = plt.subplots(figsize=self.figsize)
         
         sns.heatmap(
             pivot_df,
@@ -352,15 +562,41 @@ class ChartGenerator:
             
         Returns
         -------
-        plt.Figure
-            Matplotlib figure
+        plt.Figure or plotly.graph_objects.Figure
+            Figure object
         """
-        fig, ax = plt.subplots(figsize=(10, 8))
-        
         if columns:
             corr = df[columns].corr()
         else:
             corr = df.select_dtypes(include=[np.number]).corr()
+        
+        # Interactive mode dengan Plotly
+        if self.interactive and PLOTLY_AVAILABLE:
+            # Create mask for upper triangle
+            mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
+            corr_masked = corr.copy()
+            corr_masked.values[mask] = np.nan
+            
+            fig = px.imshow(
+                corr_masked,
+                title=title,
+                color_continuous_scale='RdBu_r',
+                zmin=-1, zmax=1,
+                text_auto='.2f'
+            )
+            fig.update_layout(
+                width=700,
+                height=600,
+                template='plotly_white'
+            )
+            
+            if save_path:
+                fig.write_image(save_path)
+            
+            return fig
+        
+        # Static mode dengan Matplotlib
+        fig, ax = plt.subplots(figsize=(10, 8))
         
         mask = np.triu(np.ones_like(corr, dtype=bool))
         
@@ -412,9 +648,28 @@ class ChartGenerator:
             
         Returns
         -------
-        plt.Figure
-            Matplotlib figure
+        plt.Figure or plotly.graph_objects.Figure
+            Figure object
         """
+        # Interactive mode dengan Plotly
+        if self.interactive and PLOTLY_AVAILABLE:
+            fig = px.histogram(
+                df, x=column, nbins=bins,
+                title=title, marginal='box' if kde else None,
+                color_discrete_sequence=self.hex_colors
+            )
+            fig.update_layout(
+                width=self.figsize[0] * 80,
+                height=self.figsize[1] * 80,
+                template='plotly_white'
+            )
+            
+            if save_path:
+                fig.write_image(save_path)
+            
+            return fig
+        
+        # Static mode dengan Matplotlib
         fig, ax = plt.subplots(figsize=self.figsize)
         
         sns.histplot(
@@ -462,9 +717,28 @@ class ChartGenerator:
             
         Returns
         -------
-        plt.Figure
-            Matplotlib figure
+        plt.Figure or plotly.graph_objects.Figure
+            Figure object
         """
+        # Interactive mode dengan Plotly
+        if self.interactive and PLOTLY_AVAILABLE:
+            fig = px.box(
+                df, x=x_column, y=y_column,
+                title=title, color=x_column,
+                color_discrete_sequence=self.hex_colors
+            )
+            fig.update_layout(
+                width=self.figsize[0] * 80,
+                height=self.figsize[1] * 80,
+                template='plotly_white'
+            )
+            
+            if save_path:
+                fig.write_image(save_path)
+            
+            return fig
+        
+        # Static mode dengan Matplotlib
         fig, ax = plt.subplots(figsize=self.figsize)
         
         sns.boxplot(
@@ -528,3 +802,229 @@ class ChartGenerator:
             plt.savefig(save_path, dpi=150, bbox_inches='tight')
         
         return fig
+    
+    def plot_scatter(
+        self,
+        df: pd.DataFrame,
+        x_column: str,
+        y_column: str,
+        color_column: str = None,
+        size_column: str = None,
+        title: str = "Scatter Plot",
+        xlabel: str = None,
+        ylabel: str = None,
+        save_path: str = None
+    ):
+        """
+        Plot scatter chart - ideal untuk Colab dengan interaktivitas.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Data untuk plotting
+        x_column : str
+            Kolom untuk x-axis
+        y_column : str
+            Kolom untuk y-axis
+        color_column : str, optional
+            Kolom untuk warna points
+        size_column : str, optional
+            Kolom untuk ukuran points
+        title : str
+            Judul chart
+        xlabel : str, optional
+            Label x-axis
+        ylabel : str, optional
+            Label y-axis
+        save_path : str, optional
+            Path untuk menyimpan
+            
+        Returns
+        -------
+        plt.Figure or plotly.graph_objects.Figure
+            Figure object
+        """
+        # Interactive mode dengan Plotly
+        if self.interactive and PLOTLY_AVAILABLE:
+            fig = px.scatter(
+                df, x=x_column, y=y_column,
+                color=color_column, size=size_column,
+                title=title,
+                labels={x_column: xlabel or x_column, y_column: ylabel or y_column},
+                color_discrete_sequence=self.hex_colors
+            )
+            fig.update_layout(
+                width=self.figsize[0] * 80,
+                height=self.figsize[1] * 80,
+                template='plotly_white'
+            )
+            
+            if save_path:
+                fig.write_image(save_path)
+            
+            return fig
+        
+        # Static mode dengan Matplotlib
+        fig, ax = plt.subplots(figsize=self.figsize)
+        
+        if color_column:
+            scatter = ax.scatter(
+                df[x_column], df[y_column],
+                c=pd.Categorical(df[color_column]).codes,
+                s=df[size_column] if size_column else 50,
+                alpha=0.6, cmap='husl'
+            )
+            plt.colorbar(scatter, label=color_column)
+        else:
+            ax.scatter(
+                df[x_column], df[y_column],
+                s=df[size_column] if size_column else 50,
+                alpha=0.6, color=self.colors[0]
+            )
+        
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.set_xlabel(xlabel or x_column)
+        ax.set_ylabel(ylabel or y_column)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        
+        return fig
+
+
+# ============================================================================
+# GOOGLE COLAB HELPER FUNCTIONS
+# ============================================================================
+
+def colab_quick_setup():
+    """
+    Quick setup untuk Google Colab.
+    Jalankan di awal notebook Colab.
+    
+    Example
+    -------
+    >>> from src.visualization.charts import colab_quick_setup
+    >>> colab_quick_setup()
+    """
+    if not is_running_in_colab():
+        print("Not running in Google Colab")
+        return
+    
+    install_colab_dependencies()
+    setup_colab_display()
+    print("✅ Google Colab visualization setup complete!")
+    print("   - Matplotlib inline mode activated")
+    print("   - High DPI display enabled")
+    print("   - Dependencies installed")
+
+
+def create_colab_charts(interactive: bool = True) -> ChartGenerator:
+    """
+    Factory function untuk membuat ChartGenerator yang optimal untuk Colab.
+    
+    Parameters
+    ----------
+    interactive : bool
+        Gunakan Plotly untuk chart interaktif
+    
+    Returns
+    -------
+    ChartGenerator
+        Instance yang sudah dikonfigurasi untuk Colab
+    
+    Example
+    -------
+    >>> from src.visualization.charts import create_colab_charts
+    >>> charts = create_colab_charts()
+    >>> fig = charts.plot_trend(df, 'date', 'value')
+    >>> charts.show(fig)
+    """
+    return ChartGenerator(figsize=(12, 6), interactive=interactive)
+
+
+def save_chart_to_drive(fig, filename: str, folder: str = "/content/drive/MyDrive/charts"):
+    """
+    Simpan chart ke Google Drive (khusus Colab).
+    
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure or plotly.graph_objects.Figure
+        Figure untuk disimpan
+    filename : str
+        Nama file (dengan ekstensi, misal 'chart.png')
+    folder : str
+        Folder tujuan di Google Drive
+    
+    Example
+    -------
+    >>> from src.visualization.charts import save_chart_to_drive
+    >>> save_chart_to_drive(fig, 'trend_analysis.png')
+    """
+    if not is_running_in_colab():
+        print("This function is only available in Google Colab")
+        return
+    
+    import os
+    
+    # Mount Google Drive jika belum
+    try:
+        from google.colab import drive
+        if not os.path.exists('/content/drive'):
+            drive.mount('/content/drive')
+    except Exception as e:
+        print(f"Error mounting Google Drive: {e}")
+        return
+    
+    # Buat folder jika tidak ada
+    os.makedirs(folder, exist_ok=True)
+    
+    filepath = os.path.join(folder, filename)
+    
+    if hasattr(fig, 'write_image'):  # Plotly
+        fig.write_image(filepath)
+    else:  # Matplotlib
+        fig.savefig(filepath, dpi=150, bbox_inches='tight')
+    
+    print(f"✅ Chart saved to: {filepath}")
+
+
+def display_side_by_side(*figs, titles: List[str] = None):
+    """
+    Display multiple figures side by side di Colab.
+    
+    Parameters
+    ----------
+    *figs : matplotlib.figure.Figure or plotly.graph_objects.Figure
+        Figures untuk ditampilkan
+    titles : List[str], optional
+        Judul untuk setiap figure
+    
+    Example
+    -------
+    >>> from src.visualization.charts import display_side_by_side
+    >>> display_side_by_side(fig1, fig2, titles=['Chart 1', 'Chart 2'])
+    """
+    if is_running_in_colab():
+        from IPython.display import display, HTML
+        
+        if titles is None:
+            titles = [f"Chart {i+1}" for i in range(len(figs))]
+        
+        for title, fig in zip(titles, figs):
+            print(f"\n{'='*50}")
+            print(f"📊 {title}")
+            print('='*50)
+            
+            if hasattr(fig, 'show'):  # Plotly
+                fig.show()
+            else:  # Matplotlib
+                plt.figure(fig.number)
+                plt.show()
+    else:
+        for fig in figs:
+            if hasattr(fig, 'show'):
+                fig.show()
+            else:
+                plt.show()
