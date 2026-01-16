@@ -1,5 +1,7 @@
 # Stack Overflow Analytics with PySpark and NLP
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/rehanalfarizu/stackoverflow-analytics-pyspark-nlp/blob/main/notebooks/stackoverflow_analytics_colab.ipynb)
+
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![PySpark](https://img.shields.io/badge/PySpark-3.5.0-orange.svg)](https://spark.apache.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
